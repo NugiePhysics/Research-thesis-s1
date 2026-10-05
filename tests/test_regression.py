@@ -1,0 +1,56 @@
+"""Uji regresi: hasil package harus sama dengan hasil notebook asli.
+
+`data/baseline_lambda_sweep.json` dibuat dari kode notebook asli (commit 9aeebc2)
+yang dieksekusi verbatim. Tabel harus identik karakter per karakter; nilai
+numerik internal boleh berbeda di level pembulatan float.
+"""
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+import sympy as sp
+
+from kerr_ds import format_table, kerr_horizon_radius, run_lambda_sweep, symbolic
+
+BASELINE = json.loads((Path(__file__).parent / "data" / "baseline_lambda_sweep.json").read_text())
+
+
+@pytest.fixture(scope="module")
+def results():
+    p = BASELINE["params"]
+    rh = kerr_horizon_radius(p["M"], p["a"])
+    return run_lambda_sweep(p["M"], p["a"], p["lambdas"], p["r0"], p["theta0"], p["phi0"],
+                            p["E"], p["b"] * p["E"], rh, dtau=p["dtau"], max_steps=p["max_steps"],
+                            verbose=False)
+
+
+def test_table_identical_to_original_output(results):
+    assert format_table(BASELINE["params"]["a"], results) == BASELINE["table"]
+
+
+def test_steps_and_deflection(results):
+    for res, ref in zip(results, BASELINE["trajectories"], strict=True):
+        assert res.lmd == ref["lmd"]
+        assert res.steps == ref["steps"]
+        assert abs(res.deflection_deg - ref["deflection_deg"]) < 1e-6
+
+
+def test_trajectory_and_hamiltonian_samples(results):
+    for res, ref in zip(results, BASELINE["trajectories"], strict=True):
+        idx = ref["sample_idx"]
+        np.testing.assert_allclose(res.X[idx], ref["X"], rtol=1e-8, atol=1e-8)
+        np.testing.assert_allclose(res.Y[idx], ref["Y"], rtol=1e-8, atol=1e-8)
+        np.testing.assert_allclose(res.H[idx], ref["H"], rtol=0, atol=1e-13)
+
+
+def test_inverse_metric_matches_numeric_inverse():
+    args = symbolic.COORDS + symbolic.PARAMS
+    g = sp.lambdify(args, symbolic.metric(), 'numpy')
+    g_inv = sp.lambdify(args, symbolic.derive_hamiltonian()['g_inv'], 'numpy')
+
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        vals = (0.0, rng.uniform(3, 500), rng.uniform(0.1, np.pi - 0.1), rng.uniform(0, 2*np.pi),
+                1.0, rng.uniform(-0.99, 0.99), rng.uniform(-5e-6, 5e-6))
+        np.testing.assert_allclose(g_inv(*vals), np.linalg.inv(g(*vals)), rtol=1e-10, atol=1e-14)
