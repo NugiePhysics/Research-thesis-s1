@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Output hasil run (figure, data)
+results/
+
+# Editor / OS
+.vscode/
+.DS_Store
