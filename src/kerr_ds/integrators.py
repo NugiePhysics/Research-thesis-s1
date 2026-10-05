@@ -1,4 +1,4 @@
-"""Integrator numerik untuk persamaan Hamilton dx/dτ = ∂H/∂p, dp/dτ = -∂H/∂x."""
+"""Numerical integrators for Hamilton's equations dx/dτ = ∂H/∂p, dp/dτ = -∂H/∂x."""
 from .base import Integrator
 
 

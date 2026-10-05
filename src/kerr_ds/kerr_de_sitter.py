@@ -1,4 +1,4 @@
-"""Ruang-waktu Kerr-de Sitter: evaluasi numerik Hamiltonian dan turunannya."""
+"""Kerr-de Sitter spacetime: numerical evaluation of the Hamiltonian and its derivatives."""
 import functools
 
 import numpy as np
@@ -12,16 +12,16 @@ _ARGS = symbolic.COORDS + symbolic.MOMENTA + symbolic.PARAMS
 
 @functools.cache
 def _numeric_functions():
-    """Lambdify ekspresi simbolik (sekali per proses, dipakai semua instance).
+    """Lambdify the symbolic expressions (once per process, shared by all instances).
 
-    dH/dx dan dH/dp digabung dalam satu fungsi dengan `cse=True` karena berbagi
-    banyak sub-ekspresi, dan memakai modul `math` (lebih cepat dari numpy untuk
-    skalar).
+    dH/dx and dH/dp are combined into a single function with `cse=True` because
+    they share many subexpressions, and use the `math` module (faster than numpy
+    for scalars).
     """
     exprs = symbolic.derive_hamiltonian()
     f_H = sp.lambdify(_ARGS, exprs['H'], 'math', cse=True)
     f_grad = sp.lambdify(_ARGS, [exprs['dHdx'], exprs['dHdp']], 'math', cse=True)
-    f_g_inv = sp.lambdify(symbolic.COORDS + symbolic.PARAMS, exprs['g_inv'], 'numpy')  # Untuk initial condition
+    f_g_inv = sp.lambdify(symbolic.COORDS + symbolic.PARAMS, exprs['g_inv'], 'numpy')  # For the initial conditions
     return f_H, f_grad, f_g_inv
 
 
@@ -33,7 +33,7 @@ class KerrDeSitter(Spacetime):
         self.f_H, self.f_grad, self.f_g_inv = _numeric_functions()
 
     def _args(self, x, p):
-        # tolist() -> float Python: aritmetika skalar jauh lebih cepat daripada np.float64
+        # tolist() -> Python floats: scalar arithmetic is much faster than with np.float64
         return (*x.tolist(), *p.tolist(), self.M_val, self.a_val, self.lmd_val)
 
     def H(self, x, p):
@@ -73,5 +73,5 @@ class KerrDeSitter(Spacetime):
 
 
 def kerr_horizon_radius(M, a):
-    """Radius event horizon Kerr (Lambda = 0), dipakai untuk visualisasi & stop condition."""
+    """Kerr event-horizon radius (Lambda = 0), used for plotting and the capture condition."""
     return M + np.sqrt(M**2 - a**2)

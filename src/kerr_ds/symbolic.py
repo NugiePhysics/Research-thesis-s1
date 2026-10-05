@@ -1,18 +1,23 @@
-"""Penurunan simbolik Hamiltonian geodesik di ruang-waktu Kerr-de Sitter.
+"""Symbolic derivation of the geodesic Hamiltonian in Kerr-de Sitter spacetime.
 
-M, a, dan Lambda diperlakukan sebagai simbol, sehingga ekspresi cukup diturunkan
-SEKALI dan dipakai untuk semua nilai parameter. Karena `sp.simplify` tetap mahal
-(~2 menit), hasilnya juga disimpan ke disk (pickle) dan dimuat ulang pada run
-berikutnya. Nama file cache memuat hash dari kode derivasi + versi sympy, jadi
-cache lama otomatis tidak dipakai bila metrik/derivasi diubah.
+M, a, and Lambda are treated as symbols, so the expressions only need to be
+derived ONCE and can be reused for every parameter value. Because `sp.simplify`
+is still expensive (about a minute, sometimes much longer depending on Python's
+hash randomization), the result is also stored on disk (pickle) and
+reloaded on subsequent runs. The cache file name contains a hash of the
+derivation code (excluding docstrings and comments) and the SymPy version, so a
+stale cache is ignored automatically whenever the metric or the derivation
+changes.
 
-Lokasi cache: ~/.cache/kerr_ds (bisa diganti lewat env var KERR_DS_CACHE_DIR).
+Cache location: ~/.cache/kerr_ds (override with the KERR_DS_CACHE_DIR env var).
 """
+import ast
 import functools
 import hashlib
 import inspect
 import os
 import pickle
+import textwrap
 import warnings
 from pathlib import Path
 
@@ -20,7 +25,7 @@ import sympy as sp
 
 CACHE_DIR = Path(os.environ.get("KERR_DS_CACHE_DIR", Path.home() / ".cache" / "kerr_ds"))
 
-# 1. Definisi Simbol
+# Symbols
 t, r, th, ph = sp.symbols('t r theta phi')
 pt, pr, pth, pph = sp.symbols('pt pr ptheta pphi')
 M, a, L = sp.symbols('M a Lambda')
@@ -31,7 +36,7 @@ PARAMS = (M, a, L)
 
 
 def metric():
-    """Metrik kovarian g_uv Kerr-de Sitter (Boyer-Lindquist)."""
+    """Covariant Kerr-de Sitter metric g_uv (Boyer-Lindquist coordinates)."""
     Sigma = r**2 + (a * sp.cos(th))**2
     Delta_r = (r**2 + a**2) * (1 - (L * r**2)/3) - 2*M*r
     Delta_th = 1 + (L * a**2 * sp.cos(th)**2)/3
@@ -54,11 +59,11 @@ def metric():
 
 
 def inverse_metric(g):
-    """Invers metrik g^uv, eksak, memanfaatkan struktur blok.
+    """Exact inverse metric g^uv, exploiting the block structure.
 
-    Hanya t dan phi yang terkopel, jadi invers = invers blok 2x2 (t, phi)
-    ditambah 1/g_rr dan 1/g_thth. Jauh lebih cepat daripada `g.inv()` generik
-    (~7 menit) dan menghasilkan ekspresi yang lebih ringkas.
+    Only t and phi are coupled, so the inverse is the inverse of the 2x2 (t, phi)
+    block plus 1/g_rr and 1/g_thth. Much faster than a generic `g.inv()`
+    (~7 minutes) and yields more compact expressions.
     """
     g_tt, g_tp, g_pp = g[0, 0], g[0, 3], g[3, 3]
     D = g_tt * g_pp - g_tp**2
@@ -87,22 +92,33 @@ def _derive():
     }
 
 
+def _code_fingerprint(func):
+    """AST dump of `func` without its docstring (comments are not part of the AST)."""
+    node = ast.parse(textwrap.dedent(inspect.getsource(func))).body[0]
+    first = node.body[0]
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+        node.body = node.body[1:]
+    return ast.dump(node)
+
+
 def _cache_path():
-    source = ''.join(inspect.getsource(f) for f in (metric, inverse_metric, _derive))
-    key = hashlib.sha256((source + sp.__version__).encode()).hexdigest()[:16]
+    # Hash only the code, so editing docstrings or comments does not trigger a
+    # (slow) re-derivation.
+    code = ''.join(_code_fingerprint(f) for f in (metric, inverse_metric, _derive))
+    key = hashlib.sha256((code + sp.__version__).encode()).hexdigest()[:16]
     return CACHE_DIR / f"hamiltonian_{key}.pkl"
 
 
 @functools.cache
 def derive_hamiltonian():
-    """Ekspresi sympy {'H', 'dHdx', 'dHdp', 'g_inv'}; dari cache disk bila ada."""
+    """SymPy expressions {'H', 'dHdx', 'dHdp', 'g_inv'}, loaded from the disk cache if available."""
     path = _cache_path()
     if path.exists():
         try:
             with open(path, 'rb') as f:
                 return pickle.load(f)
         except Exception:
-            pass  # cache rusak -> turunkan ulang
+            pass  # corrupt cache -> derive again
 
     exprs = _derive()
     try:
@@ -112,5 +128,5 @@ def derive_hamiltonian():
             pickle.dump(exprs, f)
         tmp.replace(path)
     except OSError as e:
-        warnings.warn(f"Gagal menyimpan cache Hamiltonian ke {path}: {e}")
+        warnings.warn(f"Could not save the Hamiltonian cache to {path}: {e}")
     return exprs

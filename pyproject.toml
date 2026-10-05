@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kerr-ds"
 version = "0.1.0"
-description = "Defleksi cahaya di ruang-waktu Kerr-de Sitter (Penelitian S1)"
+description = "Light deflection in Kerr-de Sitter spacetime (undergraduate thesis research)"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "NugiePhysics", email = "nugi.physics@gmail.com" }]

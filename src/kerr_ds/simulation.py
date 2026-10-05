@@ -1,4 +1,4 @@
-"""Integrasi lintasan foton dan sapuan (sweep) nilai Lambda."""
+"""Photon trajectory integration and parameter sweeps over Lambda and spin."""
 import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
@@ -7,16 +7,16 @@ from dataclasses import dataclass
 import numpy as np
 
 from .integrators import RungeKutta4
-from .kerr_de_sitter import KerrDeSitter, _numeric_functions
+from .kerr_de_sitter import KerrDeSitter, _numeric_functions, kerr_horizon_radius
 
 
 @dataclass
 class TrajectoryResult:
     lmd: float
-    X: np.ndarray        # r cos(phi) tiap langkah
-    Y: np.ndarray        # r sin(phi) tiap langkah
+    X: np.ndarray        # r cos(phi) at each step
+    Y: np.ndarray        # r sin(phi) at each step
     phi: np.ndarray
-    H: np.ndarray        # nilai Hamiltonian tiap langkah
+    H: np.ndarray        # Hamiltonian value at each step
     steps: int
     deflection_deg: float
 
@@ -26,7 +26,7 @@ class TrajectoryResult:
 
 
 def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000):
-    """Integrasi RK4 sampai foton jatuh ke horizon atau kembali keluar (scattering)."""
+    """Integrate with RK4 until the photon is captured or scattered back out."""
     intg = RungeKutta4(sptm)
 
     X_vals = []
@@ -41,23 +41,23 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
         r_curr = x[1]
         phi_curr = x[3]
 
-        # Simpan nilai Hamiltonian di setiap langkah
+        # Record the Hamiltonian at every step
         hamiltonian_values.append(sptm.H(x, p))
 
-        # Konversi ke Cartesian untuk plot (projected)
+        # Convert to Cartesian coordinates for plotting (projected)
         X_vals.append(r_curr * np.cos(phi_curr))
         Y_vals.append(r_curr * np.sin(phi_curr))
         Phi_vals.append(phi_curr)
 
         # Stop Conditions
-        if r_curr < r_horizon * 1.1: # Jatuh ke lubang hitam
+        if r_curr < r_horizon * 1.1: # Captured by the black hole
             break
-        if r_curr > r0 + 5 and steps > 10: # Keluar kembali (scattering)
+        if r_curr > r0 + 5 and steps > 10: # Scattered back out
             break
 
         steps += 1
 
-    # Analisis Defleksi: total perubahan sudut mutlak dikurangi pi
+    # Deflection: total absolute change in azimuth minus pi
     deflection = abs(abs(Phi_vals[-1] - phi0) - np.pi)
 
     return TrajectoryResult(
@@ -72,7 +72,7 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
 
 
 def initial_state(sptm, r0, theta0, phi0, E, L_ang):
-    """State awal (x, p) foton; ValueError bila kondisi awal tidak valid."""
+    """Initial photon state (x, p); raises ValueError for invalid initial conditions."""
     x = np.array([0.0, r0, theta0, phi0])
     pr_init = sptm.get_initial_pr(x, E, L_ang)
     p = np.array([-E, pr_init, 0.0, L_ang])
@@ -80,7 +80,7 @@ def initial_state(sptm, r0, theta0, phi0, E, L_ang):
 
 
 def _run_one(job):
-    # Fungsi top-level agar bisa dikirim ke worker process. None = kondisi awal invalid.
+    # Top-level function so it can be sent to worker processes. None = invalid initial conditions.
     sptm = KerrDeSitter(job['M'], job['a'], job['lmd'])
     try:
         x, p = initial_state(sptm, job['r0'], job['theta0'], job['phi0'], job['E'], job['L_ang'])
@@ -102,20 +102,15 @@ def format_table(a, results):
     return "\n".join([table_header()] + [table_row(a, res) for res in results]) + "\n"
 
 
-def run_lambda_sweep(M, a, lambdas, r0, theta0, phi0, E, L_ang, r_horizon,
-                     dtau=0.05, max_steps=30000, n_jobs=None, verbose=True):
-    """Hitung lintasan & defleksi untuk setiap Lambda; urutan hasil mengikuti `lambdas`.
+def _run_jobs(jobs, n_jobs, verbose):
+    """Run all jobs; return [(job, result)] in the order of `jobs`.
 
-    Setiap Lambda independen, jadi dijalankan paralel di `n_jobs` proses
-    (default: jumlah core). `n_jobs=1` menjalankan semuanya di proses ini.
-    Bila dipanggil dari script .py (bukan notebook), panggil di dalam blok
-    `if __name__ == "__main__":` (syarat multiprocessing mode "spawn").
+    Jobs with invalid initial conditions are skipped. Jobs are independent, so
+    they run in parallel on `n_jobs` processes (default: number of cores);
+    `n_jobs=1` runs everything in the current process.
     """
-    jobs = [dict(M=M, a=a, lmd=lmd, r0=r0, theta0=theta0, phi0=phi0, E=E, L_ang=L_ang,
-                 r_horizon=r_horizon, dtau=dtau, max_steps=max_steps) for lmd in lambdas]
-
-    # Turunkan/muat Hamiltonian di proses utama dulu supaya cache disk sudah ada
-    # sebelum worker dibuat (worker cukup memuat file cache).
+    # Derive/load the Hamiltonian in the main process first so the disk cache
+    # exists before the workers start (workers then only load the cache file).
     _numeric_functions()
 
     if n_jobs is None:
@@ -128,22 +123,52 @@ def run_lambda_sweep(M, a, lambdas, r0, theta0, phi0, E, L_ang, r_horizon,
         outputs = map(_run_one, jobs)
         executor = None
     else:
-        # "spawn" aman dipakai dari kernel Jupyter (fork pada proses multi-thread bisa deadlock).
+        # "spawn" is safe inside a Jupyter kernel (fork in a multithreaded process can deadlock).
         executor = ProcessPoolExecutor(max_workers=n_jobs, mp_context=multiprocessing.get_context("spawn"))
         outputs = executor.map(_run_one, jobs)
 
-    results = []
+    done = []
     try:
         for job, res in zip(jobs, outputs):
             if res is None:
                 if verbose:
                     print(f"Skipping L={job['lmd']}: Initial condition invalid")
                 continue
-            results.append(res)
+            done.append((job, res))
             if verbose:
-                print(table_row(a, res), flush=True)
+                print(table_row(job['a'], res), flush=True)
     finally:
         if executor is not None:
             executor.shutdown()
 
-    return results
+    return done
+
+
+def run_lambda_sweep(M, a, lambdas, r0, theta0, phi0, E, L_ang, r_horizon,
+                     dtau=0.05, max_steps=30000, n_jobs=None, verbose=True):
+    """Compute the trajectory and deflection for each Lambda, in the order of `lambdas`.
+
+    Each Lambda is independent, so they run in parallel on `n_jobs` processes
+    (default: number of cores); `n_jobs=1` runs everything in this process.
+    When called from a .py script (rather than a notebook), call it inside an
+    `if __name__ == "__main__":` block (required by the "spawn" start method).
+    """
+    jobs = [dict(M=M, a=a, lmd=lmd, r0=r0, theta0=theta0, phi0=phi0, E=E, L_ang=L_ang,
+                 r_horizon=r_horizon, dtau=dtau, max_steps=max_steps) for lmd in lambdas]
+    return [res for _, res in _run_jobs(jobs, n_jobs, verbose)]
+
+
+def run_spin_sweep(M, spins, lambdas, r0, theta0, phi0, E, L_ang,
+                   dtau=0.05, max_steps=30000, n_jobs=None, verbose=True):
+    """Compute the trajectory and deflection for every combination of spin `a` and Lambda.
+
+    Returns a dict {(a, Lambda): TrajectoryResult}; combinations with invalid
+    initial conditions are omitted. The horizon radius used for the capture
+    condition is computed per spin with `kerr_horizon_radius(M, a)`. The whole
+    grid runs in a single process pool (see `run_lambda_sweep` for `n_jobs` and
+    for usage from .py scripts).
+    """
+    jobs = [dict(M=M, a=a, lmd=lmd, r0=r0, theta0=theta0, phi0=phi0, E=E, L_ang=L_ang,
+                 r_horizon=kerr_horizon_radius(M, a), dtau=dtau, max_steps=max_steps)
+            for a in spins for lmd in lambdas]
+    return {(job['a'], job['lmd']): res for job, res in _run_jobs(jobs, n_jobs, verbose)}

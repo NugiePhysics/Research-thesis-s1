@@ -1,4 +1,4 @@
-"""Antarmuka abstrak: ruang-waktu (Hamiltonian) dan integrator."""
+"""Abstract interfaces: spacetime (Hamiltonian) and integrator."""
 from abc import ABC, abstractmethod
 
 
@@ -16,10 +16,10 @@ class Spacetime(ABC):
         pass
 
     def grad(self, x, p):
-        """Kembalikan (dH/dx, dH/dp) sekaligus.
+        """Return (dH/dx, dH/dp) together.
 
-        Default memanggil dHdx dan dHdp terpisah; subclass boleh override
-        dengan versi yang menghitung keduanya dalam satu panggilan.
+        The default calls dHdx and dHdp separately; subclasses may override it
+        with a version that computes both in a single call.
         """
         return self.dHdx(x, p), self.dHdp(x, p)
 

@@ -8,7 +8,7 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Output hasil run (figure, data)
+# Run outputs (figures, data)
 results/
 
 # Editor / OS
