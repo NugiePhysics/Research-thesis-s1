@@ -11,6 +11,18 @@ __pycache__/
 # Run outputs (figures, data)
 results/
 
+# LaTeX auxiliary files (docs/laporan_akhir)
+*.aux
+*.log
+*.bbl
+*.blg
+*.out
+*.toc
+*.synctex.gz
+
+# Local notes (not published)
+docs/ANALISIS_KESESUAIAN_ANALITIK.md
+
 # Editor / OS
 .vscode/
 .DS_Store

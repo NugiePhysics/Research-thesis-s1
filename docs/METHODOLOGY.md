@@ -229,29 +229,69 @@ After every step, `trace_photon` checks the following conditions:
 
 ## 8. Deflection angle
 
+### 8.1 Definition used by the code (main articles)
+
+The deflection angle reported by the code, `TrajectoryResult.deflection_deg`, is the finite-distance
+deflection angle of Ishihara et al. [[3]](#16-references). This is the definition used by Belhaj et al.
+[[4]](#16-references) (Eq. 2.1) and Huang et al. [[5]](#16-references) (Eq. 12):
+
 $$
-\delta = \Bigl|\, \lvert\phi_\text{final} - \phi_0\rvert - \pi \,\Bigr| \qquad \text{(converted to degrees)},
+\delta = \Psi_O - \Psi_S + \phi_{OS} \qquad \text{(converted to degrees)},
 $$
 
-where $\phi_\text{final}$ is the value of $\phi$ at the last point of the trajectory (the first step with
-$r > r_0 + 5$).
+where $\phi_{OS} = \phi_\text{final} - \phi_0$ is the azimuth swept from the source (the start of the
+trajectory, $r_S = r_0$) to the observer (the end of the trajectory, the first step with $r > r_0 + 5$).
+$\Psi_S$ and $\Psi_O$ are the angles between the ray and the outward radial direction, measured by static
+observers (4-velocity $u \propto \partial_t$) at the source and at the observer. In the static observer's
+orthonormal frame,
 
-- A straight line from infinity to infinity sweeps $\Delta\phi = \pi$, so $\delta$ is the excess azimuthal
-  sweep caused by gravity. Values $\delta > 180^\circ$ indicate that the photon winds around the black hole
-  at least once before escaping (e.g. $a = -0.99$, $b = 7$ gives $\delta \approx 244^\circ$).
-- $\delta$ is **only meaningful for scattered photons**. For captured photons, or runs that reach
-  `max_steps`, the formula still returns a number but it has no physical meaning; check
-  `result.r[-1]`, which is $\approx r_0 + 5$ for scattered photons.
-- $\delta$ is evaluated at a finite radius and uses the coordinate angle $\phi$; see
-  [Section 13](#13-limitations).
+$$
+\tan\Psi = \frac{p_{\hat\phi}}{p_{\hat r}}, \qquad
+p_{\hat r} = \frac{p_r}{\sqrt{g_{rr}}}, \qquad
+p_{\hat\phi} = \frac{p_\phi - (g_{t\phi}/g_{tt})\,p_t}{\sqrt{g_{\phi\phi} - g_{t\phi}^2/g_{tt}}},
+$$
+
+evaluated with `atan2` so that $\Psi_S \approx \pi$ for the ingoing photon at the source and
+$\Psi_O \approx 0$ at the observer (`KerrDeSitter.static_observer_angle`). These are also the angles in the
+Randers optical space of Huang et al.: the Riemannian part of the Randers metric is conformal to the static
+observer's spatial metric.
+
+- In flat space $\delta = 0$ exactly. For $\Lambda = 0$ and $r_S, r_O \to \infty$, $\delta$ becomes the usual
+  asymptotic deflection angle. For Schwarzschild–de Sitter,
+  $\sin\Psi_O = b\sqrt{1 - 2M/r_O - \Lambda r_O^2/3}\,/\,r_O$.
+- Values $\delta > 180^\circ$ indicate that the photon winds around the black hole at least once before
+  escaping (e.g. $a = -0.99$, $b = 7$ gives $\delta \approx 246^\circ$).
+- $\delta$ is only meaningful for scattered photons. It is NaN for captured photons, for runs that reach
+  `max_steps` (`result.escaped` is `False`), and where no static observer exists ($g_{tt} \ge 0$).
+
+### 8.2 Coordinate and legacy values
+
+Two further quantities are kept:
+
+| Attribute | Definition | Remarks |
+|---|---|---|
+| `deflection_coord_deg` | $\phi_{OS} - \pi$ (signed) | Contains the flat-space offset $-[\arcsin(b/r_S) + \arcsin(b/r_O)]$, about $-1.6^\circ$ for $b = 7$ |
+| `deflection_legacy_deg` | $\lvert\phi_{OS} - \pi\rvert$ | Value of the original research code, used in the thesis tables; `format_legacy_table` reproduces the original table |
+
+The coordinate value and $\delta$ depend on $\Lambda$ with **opposite signs**. The coordinate sweep
+$\phi_{OS}$ alone grows with $\Lambda$ (Huang et al., Sec. 4.1.2). In Schwarzschild–de Sitter, $\Lambda$ enters
+the orbit only through $1/b_\text{eff}^2 = 1/b^2 + \Lambda/3$, because the orbit equation
+$d^2u/d\phi^2 + u = 3Mu^2$ does not contain $\Lambda$ [[2]](#16-references). In Kerr–de Sitter, the
+Boyer–Lindquist $\phi$ also rotates at large $r$ ($\omega = -g_{t\phi}/g_{\phi\phi} \to a\Lambda/3$), which adds
+about $a\Lambda(r_S + r_O)/3$. The measured angles $\Psi$ carry the dominant term
+$-\Lambda b\,(1/u_S + 1/u_O)/6$ (Huang et al., Eq. 24). As a result, $\delta$ **decreases** for $\Lambda > 0$,
+as in the main articles. The exception is the near-critical case $a = -0.99$, $b = 7$
+($b - b_c = 0.017$), where the shift of the critical impact parameter $b_c$ dominates.
 
 ## 9. Validation
 
 | Check | Scope | Criterion | Result |
 |---|---|---|---|
 | Hamiltonian constraint | every run | $H = 0$ ideally | $\max\lvert H\rvert \approx 2.2\times10^{-11}$ (main notebook) |
-| Analytic Schwarzschild benchmark | one-off | exact orbit integral | agreement to 4 decimal places |
-| Flat-space benchmark | one-off | straight-line geometry | agreement to 4 decimal places |
+| Exact benchmark (quadrature) | notebooks, `pytest` | same $\delta$ from the first integrals | agreement to $\lesssim 10^{-6}$ degrees |
+| Flat-space benchmark | `pytest` | $\delta = 0$ | $\lvert\delta\rvert < 10^{-7}$ degrees |
+| Literature, $\Lambda = 0$ (Hasanuddin 2012) | `Validation.ipynb` | asymptotic Kerr angle | agreement after the finite-distance correction |
+| Analytic formulas with $\Lambda$ (Huang 2025, Belhaj 2022) | `pytest`, main notebook | $\Lambda$ dependence of $\delta$ | same sign; within 3% / 5% in the weak field |
 | Regression test | `pytest` | identical to the original code | pass |
 | Inverse metric | `pytest` | matches `numpy.linalg.inv` | pass |
 | Fitting and spin sweep | `pytest` | known values / synthetic data | pass |
@@ -262,27 +302,50 @@ $r > r_0 + 5$).
    $\max\lvert H\rvert \approx 2.2\times10^{-11}$ for the main notebook ($a = 0.99$, $b = 7$) and
    $\approx 5.3\times10^{-12}$ for the regression baseline ($a = -0.99$). The error is dominated by RK4
    truncation error (it drops by a factor of 16 when $\Delta\tau$ is halved).
-2. **Analytic Schwarzschild benchmark.** For $a = 0$, $\Lambda = 0$, $b = 7$, the exact orbit integral
-   $\phi(r)$ from $r_0 = 500$ to periapsis ($r_\text{min} = 5.6173$) and back out to $r = 505$ gives
-   $\delta = 63.0126^\circ$, in agreement to four decimal places with the simulation ($63.0126^\circ$). The exact
-   asymptotic deflection is $64.6090^\circ$; the difference is the finite-distance offset discussed in
-   [Section 13](#13-limitations).
-3. **Flat-space benchmark.** $M = 0$, $a = 0$, $\Lambda = 0$, $b = 7$ gives $\delta = 1.5963^\circ$, matching the
-   straight-line geometry $\arcsin(b/r_0) + \arcsin(b/r_\text{final})$ with $r_\text{final} = 505.048$.
+2. **Exact benchmark** (`analytic.deflection_exact_deg`). On the equator, with the normalisation of the
+   code ($E = 1$, $L = b$, $B = \Xi b$, $P = r^2 + a^2 - aB$), the first integrals give
+
+   $$
+   R(r) = P^2 - \Delta_r (B - a)^2, \qquad
+   \frac{d\phi}{dr} = \frac{\Xi\,[\,aP/\Delta_r + (B - a)\,]}{\sqrt{R(r)}}.
+   $$
+
+   $R(r)$ is a quartic, so the turning point is factored out exactly, and $\phi_{OS}$ is obtained by
+   quadrature (tolerance $10^{-13}$) between the same source and observer radii as the simulation. With the
+   static-observer angles this gives the exact $\delta$. Simulation and benchmark agree to about $10^{-7}$
+   degrees (e.g. Schwarzschild, $b = 7$: $64.6058^\circ$; the asymptotic value is $64.6090^\circ$). In
+   Schwarzschild–de Sitter the benchmark also confirms that $\phi_{OS}$ depends on $\Lambda$ only through
+   $b_\text{eff}$ ([Section 8.2](#82-coordinate-and-legacy-values)).
+3. **Flat-space benchmark** (`tests/test_deflection.py`). $M = 0$, $a = 0$, $\Lambda = 0$ gives
+   $\lvert\delta\rvert < 10^{-7}$ degrees, and $\phi_{OS} - \pi = -[\arcsin(b/r_0) + \arcsin(b/r_\text{final})]$.
 4. **Regression test** (`tests/test_regression.py`). The baseline was produced by the original notebook
    code (commit `9aeebc2`; $a = -0.99$, $\Lambda \in \{0, -10^{-8}, \dots, -5\times10^{-6}\}$, $b = 7$). The test
-   requires a character-for-character identical output table, identical step counts,
-   $\lvert\Delta\delta\rvert < 10^{-6}$ degrees, and matching $X$, $Y$ (relative tolerance $10^{-8}$) and $H$
-   (absolute tolerance $10^{-13}$) at 22 sample points per trajectory.
+   requires a character-for-character identical output table (`format_legacy_table`), identical step counts,
+   $\lvert\Delta\delta_\text{legacy}\rvert < 10^{-6}$ degrees, and matching $X$, $Y$ (relative tolerance $10^{-8}$) and $H$
+   (absolute tolerance $10^{-13}$) at 22 sample points per trajectory. The trajectories are therefore
+   unchanged by the new definition of the deflection angle.
 5. **Inverse metric test.** The symbolic inverse is compared with `numpy.linalg.inv` at 20 random points
    ($r \in [3, 500]$, $\theta \in [0.1, \pi - 0.1]$, $a \in [-0.99, 0.99]$, $\Lambda \in [-5\times10^{-6}, 5\times10^{-6}]$)
    with relative tolerance $10^{-10}$.
 6. **Fitting and spin-sweep tests** (`tests/test_fitting.py`). $R^2 = 1$ for a perfect prediction;
-   `fit_curve` recovers the parameters of synthetic data for both models; and `run_spin_sweep` for
-   $a = 0.99$, $\Lambda = 0$ reproduces the main-notebook value of $43.9149^\circ$ in 20,140 steps.
+   `fit_curve` recovers the parameters of synthetic data for all models and returns their uncertainties;
+   and `run_spin_sweep` for $a = 0.99$, $\Lambda = 0$ reproduces the original value of $43.9149^\circ$
+   (`deflection_legacy_deg`) in 20,140 steps.
+7. **Literature, $\Lambda = 0$** ([`notebooks/Validation.ipynb`](../notebooks/Validation.ipynb)). Hasanuddin
+   (2012) [[7]](#16-references) gives asymptotic Kerr deflection angles for $a = 0.52$ and $0.9939$,
+   $b = 5$–$40$. The simulated $\delta$ at $r_0 = 500$ is smaller than the exact asymptotic value only by the
+   bending beyond $r_0$ ($0.002^\circ$–$0.018^\circ$). $\phi_{OS} - \pi$ plus the flat-space offset agrees with the
+   exact asymptotic value to $4\times10^{-4}$ degrees. The legacy value differs from the literature by the
+   offset itself (1.1°–9.1°; for $b = 40$ the coordinate value is negative). The literature values are
+   0.08°–0.28° below the exact ones.
+8. **Analytic formulas with $\Lambda$** (`tests/test_deflection.py`, main notebook). In the weak field
+   ($b = 50$, $r_S = r_O = 500$, $\Lambda = 10^{-7}$) the change of $\delta$ with $\Lambda$ agrees with Huang et
+   al. [[5]](#16-references), Eq. (24), to within 3% and with Belhaj et al. [[4]](#16-references), Eq. (5.1), to
+   within 5%. For the thesis parameters ($b = 7$, $r_0 = 500$) the main notebook compares the simulated
+   shift $\delta(\Lambda) - \delta(0)$ with both formulas. The critical impact parameter agrees with Congdon et al.
+   [[6]](#16-references), Eq. (17).
 
-Checks 2 and 3 were performed once while preparing this document; the others run automatically
-(via `pytest` or the notebooks).
+Checks 1, 2 (notebooks), and 7 run in the notebooks; checks 2–6 and 8 run with `pytest`.
 
 ## 10. Curve fitting
 
@@ -295,24 +358,32 @@ R^2 = 1 - \frac{SS_\text{res}}{SS_\text{tot}}
 $$
 
 where $y_i$ are the simulated values, $\hat y_i$ the model predictions, and $\bar y$ the sample mean. With
-6–7 data points and 3 free parameters, $R^2$ is used here as a descriptive measure of fit quality, not
-as a statistical test.
+6–7 data points and 2–3 free parameters, $R^2$ is used here as a descriptive measure of fit quality, not
+as a statistical test. `fit_curve(..., return_errors=True)` also returns the 1-sigma parameter
+uncertainties (square root of the diagonal of the covariance matrix), so that, for example, an exponent
+can be compared with 1.
 
 ### 10.1 Deflection versus Λ
 
 Implemented at the end of [`notebooks/Lambda_Deflection.ipynb`](../notebooks/Lambda_Deflection.ipynb).
 
 $$
-\delta(\Lambda) = A\,\Lambda^{B} + C
+\delta = A\,\lvert\Lambda\rvert^{B} + C, \qquad \delta = A\,\lvert\Lambda\rvert + C \ \ (\lvert\Lambda\rvert \le 10^{-6})
 $$
 
-- Data: the seven deflection angles in `results` from the main notebook ($a = 0.99$, $b = 7$), taken
-  directly from the simulation.
-- $\Lambda = 0$ is represented by $\Lambda = 10^{-10}$ so that it can be shown on a logarithmic axis; this
-  changes the deflection by only $2\times10^{-6}$ degrees (verified by simulation).
-- Initial guess $p_0 = [5000,\; 1,\; \delta(\Lambda_\text{min})]$, `maxfev` $= 20000$.
-- $C$ approximates the deflection as $\Lambda \to 0$, and $B$ is the power-law exponent.
-- Current result: $A = 67445.75$, $B = 1.0844$, $C = 43.9150$, $R^2 = 0.999985$.
+- Data: the deflection angles $\delta$ from the main notebook ($a = 0.99$, $b = 7$), fitted separately for
+  $\Lambda > 0$ and $\Lambda < 0$ against $\lvert\Lambda\rvert$ (a negative number raised to a non-integer power is
+  undefined). Each set includes $\Lambda = 0$.
+- $\Lambda = 0$ is represented by $\lvert\Lambda\rvert = 10^{-10}$ so that it can be shown on a logarithmic axis.
+- Initial guess $p_0 = [\pm 5000,\; 1,\; \delta(0)]$ (sign of the trend), `maxfev` $= 20000$.
+- Current result, $\Lambda > 0$: $A = -23250.55$, $B = 0.9869 \pm 0.0015$, $C = 45.5090$, $R^2 = 0.999999$;
+  $\Lambda < 0$: $A = 23442.12$, $B = 0.9878 \pm 0.0010$, $C = 45.5090$. Linear fits for $\lvert\Lambda\rvert \le 10^{-6}$
+  give slopes $-27893 \pm 5$ and $+27758 \pm 11$ degrees per unit $\Lambda$ ($M^{-2}$).
+- The deflection angle decreases for $\Lambda > 0$ and increases for $\Lambda < 0$, as in the main articles. The
+  small departure of $B$ from 1 comes from the higher orders in $\Lambda r_0^2$ near the cosmological horizon
+  ([Section 13](#13-limitations)), so it depends on $r_0$.
+- The original code fitted the legacy coordinate value instead ($A = 67445.75$, $B = 1.0844$, $C = 43.9150$),
+  which increases with $\Lambda$ ([Section 8.2](#82-coordinate-and-legacy-values)).
 
 ### 10.2 Deflection versus spin
 
@@ -322,20 +393,24 @@ $$
 \delta(a) = A\,e^{-Ba} + C
 $$
 
-- Data: a grid of 6 spins × 7 values of $\Lambda$ (42 trajectories, $b = 7$) from `run_spin_sweep`; each
-  $\Lambda$ is fitted separately.
-- Initial guess $p_0 = [300,\; 5,\; 70]$, `maxfev` $= 10000$.
-- Current result for $\Lambda = 0$: $A = 32.3843$, $B = 0.8940$, $C = 30.5940$, $R^2 = 0.999955$ (the other
-  values of $\Lambda$ are listed in the notebook). For $b = 7$ the effect of $\Lambda$ is at most $0.12^\circ$, so
-  the seven fitted curves nearly coincide in the figure.
+- Data: a grid of 11 spins (prograde and retrograde) × 7 values of $\Lambda$ (77 trajectories, $b = 7$) from
+  `run_spin_sweep`; each $\Lambda$ is fitted separately for prograde ($a \ge 0$) and retrograde ($a \le 0$) spins.
+- Initial guess $p_0 = [300,\; 5,\; 70]$ (prograde) and $[1,\; 6,\; 70]$ (retrograde), `maxfev` $= 20000$.
+- Current result for $\Lambda = 0$: prograde $A = 32.3813$, $B = 0.8940$, $C = 32.1902$, $R^2 = 0.999955$;
+  retrograde $A = 0.4437$, $B = 6.0327$, $C = 70.9952$, $R^2 = 0.9931$ (the other values of $\Lambda$ are listed
+  in the notebook).
+- The exponential model is descriptive only, and fits the retrograde data poorly: for retrograde photons the
+  critical impact parameter approaches $7M$ as $a \to -M$ [[6]](#16-references), so for $b = 7$ the
+  deflection angle diverges logarithmically [[8]](#16-references) and the curves must not be extrapolated to
+  $a = -1$.
 
 ## 11. Simulation parameters
 
 | Parameter | Symbol | Main notebook | Spin notebook | Regression baseline |
 |---|---|---|---|---|
 | Mass | $M$ | 1 | 1 | 1 |
-| Spin | $a$ | 0.99 | 0, 0.2, 0.4, 0.6, 0.8, 0.99 | −0.99 |
-| Cosmological constant | $\Lambda$ | 0, $10^{-8}$, $5\times10^{-8}$, $10^{-7}$, $5\times10^{-7}$, $10^{-6}$, $5\times10^{-6}$ | same | 0, $-10^{-8}$, …, $-5\times10^{-6}$ |
+| Spin | $a$ | 0.99 | 0, ±0.2, ±0.4, ±0.6, ±0.8, ±0.99 | −0.99 |
+| Cosmological constant | $\Lambda$ | 0, ±$10^{-8}$, ±$5\times10^{-8}$, ±$10^{-7}$, ±$5\times10^{-7}$, ±$10^{-6}$, ±$5\times10^{-6}$ | 0, $10^{-8}$, …, $5\times10^{-6}$ | 0, $-10^{-8}$, …, $-5\times10^{-6}$ |
 | Initial radius | $r_0$ | 500 | 500 | 500 |
 | Initial angles | $\theta_0$, $\phi_0$ | $\pi/2$, 0 | $\pi/2$, 0 | $\pi/2$, 0 |
 | Energy | $E$ | 1 | 1 | 1 |
@@ -343,14 +418,19 @@ $$
 | Step size | $\Delta\tau$ | 0.05 | 0.05 | 0.05 |
 | Step limit | `max_steps` | 30,000 | 30,000 | 30,000 |
 
-Run time on a 4-core laptop CPU (with the Hamiltonian cache already populated): about 35 s for the
-main notebook and about 2.5 min for the spin notebook.
+Run time on a 4-core laptop CPU (with the Hamiltonian cache already populated): about 1 min for the
+main notebook, about 5 min for the spin notebook, and about 2.5 min for the validation notebook.
 
 ## 12. Output quantities
 
 | Quantity | Symbol | Unit | Purpose | In code |
 |---|---|---|---|---|
-| Deflection angle | $\delta$ | degrees | primary result | `TrajectoryResult.deflection_deg` |
+| Deflection angle (definition of the main articles) | $\delta$ | degrees | primary result | `TrajectoryResult.deflection_deg` |
+| Coordinate value | $\phi_{OS} - \pi$ | degrees | comparison with the original code | `TrajectoryResult.deflection_coord_deg` |
+| Legacy value (thesis tables) | $\lvert\phi_{OS} - \pi\rvert$ | degrees | reproduces the original output | `TrajectoryResult.deflection_legacy_deg` |
+| Static-observer angles | $\Psi_S$, $\Psi_O$ | rad | ingredients of $\delta$ | `TrajectoryResult.psi_source`, `.psi_observer` |
+| Azimuth swept | $\phi_{OS}$ | rad | ingredient of $\delta$ | `TrajectoryResult.delta_phi` |
+| Escape flag | – | – | `True` if scattered back to $r > r_0 + 5$ | `TrajectoryResult.escaped` |
 | Step count | `steps` | – | trajectory length, run status | `TrajectoryResult.steps` |
 | Hamiltonian per step | $H(\tau)$ | – | numerical error indicator (ideally 0) | `TrajectoryResult.H` |
 | Projected trajectory | $X = r\cos\phi$, $Y = r\sin\phi$ | $M$ | visualization | `TrajectoryResult.X`, `.Y`, `.r` |
@@ -359,36 +439,45 @@ main notebook and about 2.5 min for the spin notebook.
 
 ## 13. Limitations
 
-1. **Finite-distance deflection.** Photons start at $r_0 = 500$ and stop at $r \approx 505$, whereas
-   deflection formulas in the literature usually refer to $r \to \infty$ (e.g. $4M/b$ in the weak-field
-   limit). Even in flat space, the definition in [Section 8](#8-deflection-angle) yields a geometric
-   offset $\arcsin(b/r_0) + \arcsin(b/r_\text{final}) \approx 1.6^\circ$ for $b = 7$. For example, Schwarzschild
-   with $b = 7$ gives $\delta = 63.01^\circ$, while the asymptotic deflection is $64.61^\circ$. For $\Lambda > 0$
-   the spacetime is not asymptotically flat, so a finite-distance definition is unavoidable; how
-   the angle is defined affects the inferred contribution of $\Lambda$ to light bending
-   [[2]](#16-references). Note also that $\phi$ is a coordinate angle rather than an angle measured by
-   a physical observer.
+1. **Finite-distance deflection.** Photons start at $r_0 = 500$ and stop at $r \approx 505$. The
+   deflection angle $\delta$ ([Section 8](#8-deflection-angle)) is defined at these finite distances, as in
+   the main articles. It excludes the bending that would accumulate beyond $r_0$ (about $2Mb/r_0^2$ rad, i.e.
+   $0.002^\circ$ for $b = 5$ and $0.018^\circ$ for $b = 40$) and is therefore slightly smaller than the
+   asymptotic angle ($64.6090^\circ$ for Schwarzschild with $b = 7$, against $64.6058^\circ$ at $r_0 = 500$). For
+   $\Lambda > 0$ the spacetime is not asymptotically flat, so a finite-distance definition is unavoidable.
+   The literature does not agree on a single definition: Arakida (2018) measures the angle relative to the
+   de Sitter background (the $O(\Lambda)$ term then vanishes), and Hu et al. (2022) find no $\Lambda$ effect
+   beyond the angular-diameter distances in a cosmological (Swiss-cheese) setting. The code follows
+   Ishihara et al., Belhaj et al., and Huang et al. [[3–5]](#16-references).
 2. **Sensitivity to the termination point.** $r_\text{final}$ can fall anywhere in
-   $(r_0 + 5,\; r_0 + 5 + \Delta r]$, with $\Delta r \approx 0.05$ per step, while near $r = 505$ the orbit
-   satisfies $d\phi/dr \approx b/r^2 \approx 1.6\times10^{-3}$ degrees per unit $M$. This yields an uncertainty of up to
-   $\sim 8\times10^{-5}$ degrees in $\delta$. With $\Delta\tau = 0.025$, the result for $\Lambda = 0$ is unchanged
-   ($43.914885^\circ$; $r_\text{final}$ stays at $505.004$), whereas for $\Lambda = 5\times10^{-6}$ it shifts by
-   $4.3\times10^{-5}$ degrees ($44.035493^\circ \to 44.035450^\circ$) because $r_\text{final}$ moves from $505.034$ to
-   $505.009$. This is comparable to the smallest $\Lambda$ effect considered ($\Lambda = 10^{-8}$ changes
-   $\delta$ by $+2\times10^{-4}$ degrees), so differences in the fourth decimal place for small $\Lambda$ should be
-   interpreted with care. A possible refinement, not applied because it would change the reported
-   values, is to interpolate $\phi$ at exactly $r = r_0 + 5$.
-3. **Proximity to the cosmological horizon for large Λ.** For $\Lambda = 5\times10^{-6}$,
+   $(r_0 + 5,\; r_0 + 5 + \Delta r]$, with $\Delta r \approx 0.05$ per step. A shift of $0.05$ in the end radius changes
+   $\delta$ by at most $2.5\times10^{-5}$ degrees (at $\Lambda = 5\times10^{-6}$; $3\times10^{-7}$ degrees at $\Lambda = 0$),
+   but the coordinate value $\phi_{OS} - \pi$ by $8\times10^{-5}$ degrees, because $d\phi/dr \approx b/r^2$ there.
+   Comparisons with analytic formulas should therefore use the actual end radius, `result.r[-1]`, as the
+   notebooks do.
+3. **Regime of the analytic formulas.** The formulas of Huang et al. and Belhaj et al. are expansions in
+   $M/b$ and in $\Lambda r^2$. At $b = 7$ (only $1.35\,b_c$ for Schwarzschild) their absolute values are far
+   from the exact result, so only the change with $\Lambda$ is compared. At $r_0 = 500$ the expansion
+   parameter $\Lambda r_0^2/3$ is $0.083$ for $\Lambda = 10^{-6}$ but $0.42$ for $\Lambda = 5\times10^{-6}$
+   ($r_0 \approx 0.65\,r_c$), where first-order formulas deviate by up to about 30%. The exact benchmark
+   `analytic.deflection_exact_deg` has no such restriction.
+4. **Proximity to the cosmological horizon for large Λ.** For $\Lambda = 5\times10^{-6}$,
    $\Lambda r_0^2/3 \approx 0.42$ (the factor $1 - \Lambda r^2/3$ in $\Delta_r$ is reduced to 0.58) and
    $r_c \approx 773.6$, so $r_0 \approx 0.65\,r_c$. Initial conditions are valid only for $r_+ < r_0 < r_c$.
-4. **Capture criterion uses the Kerr horizon** ($\Lambda = 0$). The effect is negligible
+5. **Capture criterion uses the Kerr horizon** ($\Lambda = 0$). The effect is negligible
    ([Section 7](#7-termination-criteria)) and only concerns captured photons.
-5. **Fixed step size without adaptive error control.** Adequate for the parameters used here
+6. **Fixed step size without adaptive error control.** Adequate for the parameters used here
    ($\lvert H\rvert \sim 10^{-11}$), but the error grows for impact parameters close to the critical value
    (e.g. $a = 0$, $b = 5.2$ gives $\max\lvert H\rvert \approx 2\times10^{-10}$).
-6. **Equatorial orbits only** ($\theta = \pi/2$). Non-equatorial orbits ($p_\theta \ne 0$) are not covered.
+7. **Equatorial orbits only** ($\theta = \pi/2$). Non-equatorial orbits ($p_\theta \ne 0$) are not covered.
 
 ## 14. Data provenance
+
+**Definition of the deflection angle.** The original research code, the thesis tables, and earlier
+revisions of this repository reported $\lvert\phi_{OS} - \pi\rvert$ (now `deflection_legacy_deg`). Since November
+2026 the primary result is the finite-distance deflection angle of the main articles
+([Section 8](#8-deflection-angle)); the trajectories themselves are unchanged (regression test). The
+numbers below refer to the legacy value.
 
 Earlier revisions of this repository performed the fits in two standalone scripts
 (`analysis/lambda_defleksi.py` and `analysis/spin_defleksi.py`, available in the git history at
@@ -429,7 +518,11 @@ following:
 | Initial conditions ($p_r$ from $H = 0$) | `src/kerr_ds/kerr_de_sitter.py`, `src/kerr_ds/simulation.py` | `KerrDeSitter.get_initial_pr`, `initial_state` |
 | Kerr event horizon $r_+$ | `src/kerr_ds/kerr_de_sitter.py` | `kerr_horizon_radius` |
 | RK4 integrator | `src/kerr_ds/integrators.py` | `RungeKutta4.step` |
-| Integration loop, termination, deflection | `src/kerr_ds/simulation.py` | `trace_photon` |
+| Integration loop, termination, deflection | `src/kerr_ds/simulation.py` | `trace_photon`, `TrajectoryResult` |
+| Static-observer angle $\Psi$ | `src/kerr_ds/kerr_de_sitter.py` | `KerrDeSitter.static_observer_angle` |
+| Exact benchmark (quadrature), asymptotic Kerr angle, $b_c$ | `src/kerr_ds/analytic.py` | `deflection_exact_deg`, `coordinate_deflection_exact_deg`, `asymptotic_kerr_deflection_deg`, `critical_impact_parameter` |
+| Analytic formulas of the main articles | `src/kerr_ds/analytic.py` | `huang2025_deflection_deg`, `belhaj2022_deflection_deg` |
+| Output tables (new and original format) | `src/kerr_ds/simulation.py` | `format_table`, `format_legacy_table` |
 | Parallel sweeps over $\Lambda$ and over $a \times \Lambda$ | `src/kerr_ds/simulation.py` | `run_lambda_sweep`, `run_spin_sweep` |
 | Fit models and $R^2$ | `src/kerr_ds/fitting.py` | `power_law`, `exponential_decay`, `r_squared`, `fit_curve` |
 | Plots (trajectories, $H$, fits) | `src/kerr_ds/plotting.py` | `plot_trajectories`, `plot_hamiltonian_vs_step`, `plot_hamiltonian_vs_r`, `plot_lambda_fit`, `plot_spin_fit` |
@@ -443,3 +536,13 @@ following:
    *Commun. Math. Phys.* **10**, 280–310 (1968).
 2. W. Rindler and M. Ishak, "Contribution of the cosmological constant to the relativistic bending of
    light revisited," *Phys. Rev. D* **76**, 043006 (2007).
+3. A. Ishihara, Y. Suzuki, T. Ono, T. Kitamura, and H. Asada, "Gravitational bending angle of light for
+   finite distance and the Gauss–Bonnet theorem," *Phys. Rev. D* **94**, 084015 (2016).
+4. A. Belhaj, H. Belmahi, M. Benali, and H. El Moumni, "Light deflection by rotating regular black holes
+   with a cosmological constant," *Chin. J. Phys.* **80**, 229–238 (2022).
+5. Y. Huang, X. Fu, Z. Lu, and X. Qin, "The influence of cosmological constant on light deflection in
+   rotating spacetimes via the generalized Gibbons–Werner method," arXiv:2505.06999 (2025).
+6. A. B. Congdon, S. V. Iyer, and C. R. Keeton, "Asymmetric light bending in the equatorial Kerr metric,"
+   arXiv:2207.08987 (2022).
+7. Hasanuddin, "Pembelokan cahaya dalam ruang waktu Kerr–Einstein," *Positron* **II**(2), 21–24 (2012).
+8. V. Bozza, "Gravitational lensing in the strong field limit," *Phys. Rev. D* **66**, 103001 (2002).
