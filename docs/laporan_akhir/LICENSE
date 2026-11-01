@@ -1,0 +1,20 @@
+Laporan akhir (laporan_akhir.tex, laporan_akhir.pdf), gambar (figures/), tabel (tabel/), dan data
+(data/) di folder ini dilisensikan di bawah Creative Commons Attribution 4.0 International (CC BY 4.0).
+
+Copyright (c) 2026 Nugie Saputra
+
+Anda bebas membagikan dan mengadaptasi materi ini untuk tujuan apa pun, termasuk komersial, selama
+mencantumkan atribusi yang sesuai (nama penulis, judul laporan, dan tautan ke lisensi) serta
+menyebutkan bila ada perubahan.
+
+Teks lisensi lengkap: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Skrip generate_results.py di folder ini adalah kode dan mengikuti lisensi MIT pada berkas LICENSE di
+akar repositori.
+
+---
+
+The final report (laporan_akhir.tex, laporan_akhir.pdf), figures (figures/), tables (tabel/), and data
+(data/) in this folder are licensed under the Creative Commons Attribution 4.0 International License
+(CC BY 4.0): https://creativecommons.org/licenses/by/4.0/
+The script generate_results.py is code and is covered by the MIT License in the repository root.
