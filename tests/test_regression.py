@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import sympy as sp
 
-from kerr_ds import format_table, kerr_horizon_radius, run_lambda_sweep, symbolic
+from kerr_ds import format_legacy_table, kerr_horizon_radius, run_lambda_sweep, symbolic
 
 BASELINE = json.loads((Path(__file__).parent / "data" / "baseline_lambda_sweep.json").read_text())
 
@@ -27,14 +27,14 @@ def results():
 
 
 def test_table_identical_to_original_output(results):
-    assert format_table(BASELINE["params"]["a"], results) == BASELINE["table"]
+    assert format_legacy_table(BASELINE["params"]["a"], results) == BASELINE["table"]
 
 
 def test_steps_and_deflection(results):
     for res, ref in zip(results, BASELINE["trajectories"], strict=True):
         assert res.lmd == ref["lmd"]
         assert res.steps == ref["steps"]
-        assert abs(res.deflection_deg - ref["deflection_deg"]) < 1e-6
+        assert abs(res.deflection_legacy_deg - ref["deflection_deg"]) < 1e-6
 
 
 def test_trajectory_and_hamiltonian_samples(results):

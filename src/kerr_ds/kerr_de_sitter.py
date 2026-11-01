@@ -25,6 +25,12 @@ def _numeric_functions():
     return f_H, f_grad, f_g_inv
 
 
+@functools.cache
+def _metric_function():
+    """Covariant metric g_uv as a numerical function (used for the observer angles)."""
+    return sp.lambdify(symbolic.COORDS + symbolic.PARAMS, symbolic.metric(), 'numpy')
+
+
 class KerrDeSitter(Spacetime):
     def __init__(self, M, a, lmd):
         self.M_val = M
@@ -70,6 +76,33 @@ class KerrDeSitter(Spacetime):
             raise ValueError(f"Forbidden region: pr^2={pr_sq} < 0 at r={r}, with E={E}, L={L_ang}")
 
         return -np.sqrt(pr_sq)
+
+    def metric(self, x):
+        """Covariant metric g_uv at the point x."""
+        t, r, th, ph = x
+        return np.array(_metric_function()(t, r, th, ph, self.M_val, self.a_val, self.lmd_val), dtype=float)
+
+    def static_observer_angle(self, x, p):
+        """Angle Psi (rad) between the photon direction and the outward radial direction.
+
+        Measured by a static observer (4-velocity along d/dt) at x, as in the
+        finite-distance deflection angle of Ishihara et al. (2016), used by
+        Belhaj et al. (2022, Eq. 2.1) and Huang et al. (2025, Eq. 12). Psi is
+        close to 0 for an outgoing photon and close to pi for an ingoing one.
+        Equatorial motion is assumed (p_theta = 0). Returns NaN where no static
+        observer exists (g_tt >= 0: ergoregion or beyond the static limit).
+        """
+        g = self.metric(x)
+        g_tt, g_tp, g_rr, g_pp = g[0, 0], g[0, 3], g[1, 1], g[3, 3]
+        if not g_tt < 0:
+            return np.nan
+        p_t, p_r, _, p_ph = p
+        # Components in the static observer's orthonormal frame (the common factor 1/E_obs cancels)
+        p_r_hat = p_r / np.sqrt(g_rr)
+        p_ph_hat = (p_ph - g_tp / g_tt * p_t) / np.sqrt(g_pp - g_tp**2 / g_tt)
+        # Measure the angle in the photon's sense of rotation (sign of L = p_phi)
+        sense = 1.0 if p_ph >= 0 else -1.0
+        return float(np.arctan2(sense * p_ph_hat, p_r_hat))
 
 
 def kerr_horizon_radius(M, a):

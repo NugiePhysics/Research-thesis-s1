@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from kerr_ds import exponential_decay, fit_curve, power_law, r_squared, run_spin_sweep
+from kerr_ds import exponential_decay, fit_curve, linear, power_law, r_squared, run_spin_sweep
 
 
 def test_r_squared_perfect_prediction():
@@ -21,8 +21,17 @@ def test_fit_curve_recovers_parameters(model, x, true_params, p0):
 
 
 def test_spin_sweep_matches_main_notebook():
-    # a = 0.99, Lambda = 0, b = 7: same value as in the main notebook's table
+    # a = 0.99, Lambda = 0, b = 7: same value as in the original thesis table
     res = run_spin_sweep(1.0, [0.99], [0.0], 500.0, np.pi/2, 0.0, 1.0, 7.0, n_jobs=1, verbose=False)
     assert list(res) == [(0.99, 0.0)]
-    assert f"{res[0.99, 0.0].deflection_deg:.4f}" == "43.9149"
+    assert f"{res[0.99, 0.0].deflection_legacy_deg:.4f}" == "43.9149"
     assert res[0.99, 0.0].steps == 20140
+
+
+def test_fit_curve_returns_uncertainties():
+    x = np.array([1e-10, 1e-8, 5e-8, 1e-7, 5e-7, 1e-6, 5e-6])
+    y = linear(x, -6.8e4, 64.6) + np.array([1, -1, 1, -1, 1, -1, 1]) * 1e-6
+    popt, r2, perr = fit_curve(linear, x, y, p0=[-1e4, 64.0], return_errors=True)
+    np.testing.assert_allclose(popt, [-6.8e4, 64.6], rtol=1e-3)
+    assert perr.shape == (2,) and np.all(perr > 0)
+    assert r2 == pytest.approx(1.0)

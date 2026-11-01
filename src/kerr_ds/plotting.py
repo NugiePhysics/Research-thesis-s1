@@ -110,8 +110,10 @@ def plot_hamiltonian_vs_r(res, save_path=None):
     return fig, ax
 
 
-def plot_lambda_fit(lambdas, deflections, popt, r2, save_path=None):
-    """Deflection versus Lambda with the fitted curve A * Lambda^B + C (log x axis)."""
+def plot_lambda_fit(lambdas, deflections, popt, r2, xlabel=r'Cosmological constant $\Lambda$ ($M^{-2}$)',
+                    save_path=None):
+    """Deflection versus Lambda with the fitted curve A * Lambda^B + C (log x axis, so Lambda > 0;
+    for Lambda < 0 pass |Lambda| and an appropriate `xlabel`)."""
     lambdas = np.asarray(lambdas)
     A, B, C = popt
     lmd_fit = np.logspace(np.log10(lambdas.min()), np.log10(lambdas.max()), 1000)
@@ -122,9 +124,37 @@ def plot_lambda_fit(lambdas, deflections, popt, r2, save_path=None):
     ax.plot(lmd_fit, power_law(lmd_fit, *popt), color='blue', linestyle='-', linewidth=2, label=label_fitting)
     ax.set_xscale('log')
 
-    ax.set_xlabel(r'Cosmological constant $\Lambda$ ($M^{-2}$)', fontsize=12)
+    ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel('Deflection angle (deg)', fontsize=12)
-    ax.legend(loc='upper left')
+    ax.legend(loc='best')
+    _save(fig, save_path)
+    return fig, ax
+
+
+def plot_deflection_shift_comparison(lambdas, simulated, analytic, title=None, save_path=None):
+    """Change of the deflection angle with Lambda, delta(Lambda) - delta(0): simulation versus formulas.
+
+    `simulated`: array of shifts (deg) for `lambdas`; `analytic`: {label: array of shifts (deg)}.
+    The x axis is linear so that positive and negative Lambda can be shown together.
+    """
+    lambdas = np.asarray(lambdas)
+    order = np.argsort(lambdas)
+    styles = ['-', '--', ':', '-.']
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, (label, values) in enumerate(analytic.items()):
+        ax.plot(lambdas[order], np.asarray(values)[order], linestyle=styles[i % len(styles)], linewidth=2,
+                label=label)
+    ax.scatter(lambdas, simulated, color='red', s=50, zorder=5, label='Simulation (RK4)')
+    ax.axhline(0, color='gray', linewidth=0.8)
+    ax.axvline(0, color='gray', linewidth=0.8)
+    ax.set_xlabel(r'Cosmological constant $\Lambda$ ($M^{-2}$)', fontsize=12)
+    ax.set_ylabel(r'$\delta(\Lambda) - \delta(0)$ (deg)', fontsize=12)
+    if title:
+        ax.set_title(title, fontsize=13)
+    ax.legend(loc='best')
+    ax.grid(True, linestyle='--', alpha=0.5)
+    fig.tight_layout()
     _save(fig, save_path)
     return fig, ax
 
@@ -134,14 +164,14 @@ def plot_spin_fit(spins, deflections, fits, save_path=None):
 
     `deflections` = {Lambda: deflection for each spin}, `fits` = {Lambda: (popt, R^2)}.
     """
-    x_fit = np.linspace(0, 1, 100)
+    x_fit = np.linspace(min(spins), max(spins), 100)
 
     fig, ax = plt.subplots(figsize=(11, 7))
     for lmd, y_vals in deflections.items():
         popt, r2 = fits[lmd]
         label = f'Λ = {lmd:g}'
         p = ax.plot(spins, y_vals, 'o', label=f'Data {label}')
-        formula_label = (f"Fit {label}: y = {popt[0]:.2f} * e^(-{popt[1]:.2f} * x) + {popt[2]:.2f} "
+        formula_label = (f"Fit {label}: y = {popt[0]:.4g} * e^(-{popt[1]:.2f} * x) + {popt[2]:.2f} "
                          f"($R^2$={r2:.4f})")
         ax.plot(x_fit, exponential_decay(x_fit, *popt), linestyle='--', color=p[0].get_color(),
                 label=formula_label)

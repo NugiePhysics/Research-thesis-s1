@@ -12,28 +12,65 @@ from .kerr_de_sitter import KerrDeSitter, _numeric_functions, kerr_horizon_radiu
 
 @dataclass
 class TrajectoryResult:
+    """Result of one photon integration.
+
+    Deflection angles (degrees):
+
+    - `deflection_deg`: finite-distance deflection angle as defined in the main
+      articles (Ishihara et al. 2016; Belhaj et al. 2022, Eq. 2.1; Huang et al.
+      2025, Eq. 12): delta = Psi_O - Psi_S + phi_OS, with Psi the angle between
+      the ray and the outward radial direction measured by static observers at
+      the source (start) and the observer (end). Zero in flat space. NaN if the
+      photon did not escape or no static observer exists at either end.
+    - `deflection_coord_deg`: phi_OS - pi, the coordinate azimuth swept minus pi
+      (signed). Includes the flat-space offset -[arcsin(b/r_S) + arcsin(b/r_O)].
+    - `deflection_legacy_deg`: |phi_OS - pi|, the value used by the original
+      research code (thesis tables).
+    """
     lmd: float
     X: np.ndarray        # r cos(phi) at each step
     Y: np.ndarray        # r sin(phi) at each step
     phi: np.ndarray
     H: np.ndarray        # Hamiltonian value at each step
     steps: int
-    deflection_deg: float
+    delta_phi: float     # phi_final - phi0 (rad, signed)
+    psi_source: float    # Psi_S: static-observer angle at the start (rad)
+    psi_observer: float  # Psi_O: static-observer angle at the end (rad)
+    escaped: bool        # True if the photon was scattered back out to r > r0 + 5
 
     @property
     def r(self):
         return np.sqrt(self.X**2 + self.Y**2)
+
+    @property
+    def deflection_deg(self):
+        if not self.escaped:
+            return np.nan
+        sense = 1.0 if self.delta_phi >= 0 else -1.0
+        return np.degrees(self.psi_observer - self.psi_source + sense * self.delta_phi)
+
+    @property
+    def deflection_coord_deg(self):
+        return np.degrees(abs(self.delta_phi) - np.pi)
+
+    @property
+    def deflection_legacy_deg(self):
+        return np.degrees(abs(abs(self.delta_phi) - np.pi))
 
 
 def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000):
     """Integrate with RK4 until the photon is captured or scattered back out."""
     intg = RungeKutta4(sptm)
 
+    # Observer angle at the source (start of the trajectory)
+    psi_source = sptm.static_observer_angle(x, p)
+
     X_vals = []
     Y_vals = []
     Phi_vals = []
     hamiltonian_values = []
 
+    escaped = False
     steps = 0
     while steps < max_steps:
         x, p = intg.step(x, p, dtau)
@@ -53,12 +90,10 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
         if r_curr < r_horizon * 1.1: # Captured by the black hole
             break
         if r_curr > r0 + 5 and steps > 10: # Scattered back out
+            escaped = True
             break
 
         steps += 1
-
-    # Deflection: total absolute change in azimuth minus pi
-    deflection = abs(abs(Phi_vals[-1] - phi0) - np.pi)
 
     return TrajectoryResult(
         lmd=sptm.lmd_val,
@@ -67,7 +102,10 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
         phi=np.array(Phi_vals),
         H=np.array(hamiltonian_values),
         steps=steps,
-        deflection_deg=np.degrees(deflection),
+        delta_phi=Phi_vals[-1] - phi0,
+        psi_source=psi_source,
+        psi_observer=sptm.static_observer_angle(x, p),  # at the end of the trajectory
+        escaped=escaped,
     )
 
 
@@ -91,15 +129,27 @@ def _run_one(job):
 
 
 def table_header():
-    return f"{'a':<10} | {'Lambda':<10} | {'Deflection (deg)':<20} | {'Status'}\n" + "-" * 55
+    return (f"{'a':<10} | {'Lambda':<10} | {'Deflection (deg)':<18} | {'dphi - pi (deg)':<18} | {'Status'}\n"
+            + "-" * 79)
 
 
 def table_row(a, res):
-    return f"{a:<10} | {res.lmd:<10} | {res.deflection_deg:<20.4f} | Steps: {res.steps}"
+    status = f"Steps: {res.steps}" if res.escaped else f"NOT ESCAPED (steps: {res.steps})"
+    return (f"{a:<10} | {res.lmd:<10} | {res.deflection_deg:<18.6f} | {res.deflection_coord_deg:<18.6f} "
+            f"| {status}")
 
 
 def format_table(a, results):
+    """Table of the deflection angle (article definition) and the coordinate value dphi - pi."""
     return "\n".join([table_header()] + [table_row(a, res) for res in results]) + "\n"
+
+
+def format_legacy_table(a, results):
+    """Table in the format of the original research code: |dphi - pi| (thesis tables)."""
+    header = f"{'a':<10} | {'Lambda':<10} | {'Deflection (deg)':<20} | {'Status'}\n" + "-" * 55
+    rows = [f"{a:<10} | {res.lmd:<10} | {res.deflection_legacy_deg:<20.4f} | Steps: {res.steps}"
+            for res in results]
+    return "\n".join([header] + rows) + "\n"
 
 
 def _run_jobs(jobs, n_jobs, verbose):
