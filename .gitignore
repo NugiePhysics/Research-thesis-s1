@@ -26,3 +26,6 @@ docs/ANALISIS_KESESUAIAN_ANALITIK.md
 # Editor / OS
 .vscode/
 .DS_Store
+
+# Thesis documents (kept locally, not published)
+docs/
