@@ -22,7 +22,7 @@ Congdon, Iyer, Keeton, arXiv:2207.08987 (2022), Eq. (17).
 """
 import numpy as np
 from scipy.integrate import quad
-from scipy.optimize import minimize_scalar
+from scipy.optimize import brentq, minimize_scalar
 
 _QUAD = dict(epsabs=1e-13, epsrel=1e-13, limit=500)
 
@@ -188,3 +188,179 @@ def _outer_horizon(M, a, lmd):
     coeffs = [-lmd / 3, 0.0, 1 - lmd * a**2 / 3, -2 * M, a**2] if lmd != 0 else [1.0, -2 * M, a**2]
     roots = [z.real for z in np.roots(coeffs) if abs(z.imag) < 1e-9 and 0 < z.real < 10 * M]
     return max(roots) if roots else 0.0
+
+
+def cosmological_horizon(M, a, lmd):
+    """Cosmological horizon r_c: largest positive root of Delta_r = 0 above 10 M (inf for Lambda <= 0)."""
+    if lmd <= 0:
+        return np.inf
+    coeffs = np.array([-lmd / 3, 0.0, 1 - lmd * a**2 / 3, -2 * M, a**2], dtype=float)
+    roots = [z.real for z in np.roots(coeffs) if abs(z.imag) < 1e-9 and z.real > 10 * M]
+    if not roots:
+        return np.inf
+    r = float(max(roots))
+    dcoeffs = np.polyder(coeffs)
+    for _ in range(5):
+        r -= float(np.polyval(coeffs, r) / np.polyval(dcoeffs, r))
+    return r
+
+
+def static_limit_radius(M, a, lmd):
+    """Outer cosmological static limit on the equatorial plane where g_tt = 0 (inf for Lambda <= 0)."""
+    if lmd <= 0:
+        return np.inf
+    coeffs = np.array([-lmd / 3, 0.0, 1 - lmd * a**2 / 3, -2 * M], dtype=float)
+    roots = [z.real for z in np.roots(coeffs) if abs(z.imag) < 1e-9 and z.real > 10 * M]
+    if not roots:
+        return np.inf
+    r = float(max(roots))
+    dcoeffs = np.polyder(coeffs)
+    for _ in range(5):
+        r -= float(np.polyval(coeffs, r) / np.polyval(dcoeffs, r))
+    return r
+
+
+def _t_leg(M, a, lmd, b, r_min, r_end):
+    """Coordinate time (in simulation time t_code) elapsed between r_min and r_end."""
+    q, _ = np.polydiv(_radial_quartic(M, a, lmd, b), np.array([1.0, -r_min]))
+    B = _xi(a, lmd) * b
+
+    def integrand(y):
+        r = r_min + y * y
+        P = r**2 + a**2 - a * B
+        num = (r**2 + a**2) * P / _delta_r(r, M, a, lmd) + a * (B - a)
+        return 2 * num / np.sqrt(np.polyval(q, r))
+
+    return quad(integrand, 0.0, np.sqrt(r_end - r_min), **_QUAD)[0]
+
+
+def travel_time_exact(M, a, lmd, b, r_source, r_observer):
+    """Exact coordinate travel time Delta t_OS (units of M, simulation t_code normalisation)."""
+    r_min = turning_point(M, a, lmd, b, r_max=min(r_source, r_observer))
+    return _t_leg(M, a, lmd, b, r_min, r_source) + _t_leg(M, a, lmd, b, r_min, r_observer)
+
+
+def shapiro_delay_exact(M, a, lmd, b, r_source, r_observer):
+    """Coordinate time delay relative to the Euclidean straight-line path sqrt(r_S^2 - b^2) + sqrt(r_O^2 - b^2)."""
+    t_flat = np.sqrt(r_source**2 - b**2) + np.sqrt(r_observer**2 - b**2)
+    return travel_time_exact(M, a, lmd, b, r_source, r_observer) - t_flat
+
+
+def strong_deflection_coefficients(M, a, lmd, r_source, r_observer):
+    """Strong-deflection limit coefficients (a_bar_deg, b_bar_deg) of Bozza (2002) at finite distance.
+
+    Near b -> b_c^+, the deflection angle (in degrees) obeys
+        delta(b) = -a_bar_deg * ln(b / b_c - 1) + b_bar_deg + O((b - b_c) ln(b - b_c)).
+    a_bar is computed from the exact second derivative of R(r) at the photon sphere r_ph;
+    b_bar is extracted from the exact finite-distance deflection very close to b_c.
+    """
+    b_c, r_ph = critical_impact_parameter(M, a, lmd)
+    coeffs = _radial_quartic(M, a, lmd, b_c)
+    r_pp = np.polyval(np.polyder(coeffs, 2), r_ph)
+    xi = _xi(a, lmd)
+    B_c = xi * b_c
+    P_ph = r_ph**2 + a**2 - a * B_c
+    f_phi = xi * (a * P_ph / _delta_r(r_ph, M, a, lmd) + (B_c - a))
+    a_bar_rad = f_phi / np.sqrt(0.5 * r_pp)
+    a_bar_deg = float(np.degrees(a_bar_rad))
+
+    eps1, eps2 = 1e-6, 2e-6
+    d1 = deflection_exact_deg(M, a, lmd, b_c * (1.0 + eps1), r_source, r_observer) + a_bar_deg * np.log(eps1)
+    d2 = deflection_exact_deg(M, a, lmd, b_c * (1.0 + eps2), r_source, r_observer) + a_bar_deg * np.log(eps2)
+    b_bar_deg = float(2.0 * d1 - d2)
+    return a_bar_deg, b_bar_deg
+
+
+def lambda_crossover_impact_parameter(M, a, lmd, r_source, r_observer, b_max=50.0):
+    """Impact parameter b_cross > b_c where delta(M, a, lmd, b) - delta(M, a, 0, b) == 0.
+
+    Returns np.nan if no sign reversal occurs on (b_c, b_max] (e.g. prograde spins).
+    """
+    if lmd == 0:
+        return np.nan
+    bc_lmd, _ = critical_impact_parameter(M, a, lmd)
+    bc_0, _ = critical_impact_parameter(M, a, 0.0)
+    b_low = max(bc_lmd, bc_0) * (1.0 + 1e-5)
+    if b_low >= b_max:
+        return np.nan
+
+    def diff(b):
+        return deflection_exact_deg(M, a, lmd, b, r_source, r_observer) - deflection_exact_deg(
+            M, a, 0.0, b, r_source, r_observer
+        )
+
+    f_low, f_high = diff(b_low), diff(b_max)
+    if np.isnan(f_low) or np.isnan(f_high) or f_low * f_high > 0:
+        return np.nan
+    return float(brentq(diff, b_low, b_max, xtol=1e-9))
+
+
+def shadow_angular_radius_deg(M, a, lmd, r_observer):
+    """Angular radius psi_sh (deg) of the black-hole shadow at the equatorial plane for a static observer at r_observer."""
+    b_c, _ = critical_impact_parameter(M, a, lmd)
+    return float(np.degrees(static_observer_angle(M, a, lmd, b_c, r_observer)))
+
+
+def einstein_ring_angle_deg(M, a, lmd, r_source, r_observer):
+    """Einstein ring angular radius theta_E (deg) and impact parameter b_E (units of M) for an aligned source.
+
+    Solves the finite-distance on-axis alignment condition psi_O(b) + psi_S(b) = delta_rad(b).
+    """
+    b_c, _ = critical_impact_parameter(M, a, lmd)
+    b_low = b_c * 1.01
+    b_est = np.sqrt(4.0 * M * r_source * r_observer / (r_source + r_observer))
+    r_end = min(r_source, r_observer)
+    D, xi = _delta_r(r_end, M, a, lmd), _xi(a, lmd)
+    g_tt = (a**2 - D) / r_end**2
+    g_tp = a / (r_end**2 * xi) * (D - (r_end**2 + a**2))
+    g_pp = ((r_end**2 + a**2)**2 - D * a**2) / (r_end**2 * xi**2)
+    b_turn_max = (np.sqrt(g_pp - g_tp**2 / g_tt) / np.sqrt(-g_tt) - g_tp / g_tt) * 0.9
+    b_high = min(max(b_est * 2.5, b_low * 2.0), b_turn_max)
+
+    def lens_eq(b):
+        psi_s = static_observer_angle(M, a, lmd, b, r_source)
+        psi_o = static_observer_angle(M, a, lmd, b, r_observer)
+        delta_rad = np.radians(deflection_exact_deg(M, a, lmd, b, r_source, r_observer))
+        return (psi_o + psi_s) - delta_rad
+
+    b_e = float(brentq(lens_eq, b_low, b_high, xtol=1e-10))
+    theta_e_deg = float(np.degrees(static_observer_angle(M, a, lmd, b_e, r_observer)))
+    return theta_e_deg, b_e
+
+
+def astrophysical_lensing_summary(M_solar, lmd_si, r_source_m, r_observer_m, b_over_M=7.0, a=0.0):
+    """Convert SI astrophysical black-hole parameters to geometrized units (M = 1) and estimate Lambda shift.
+
+    Parameters
+    ----------
+    M_solar : float
+        Black-hole mass in solar masses.
+    lmd_si : float
+        Cosmological constant in m^-2 (e.g. 1.11e-52).
+    r_source_m, r_observer_m : float
+        Source and observer distances from the black hole in meters.
+    b_over_M : float
+        Impact parameter in units of M = GM/c^2.
+    a : float
+        Dimensionless spin parameter a/M.
+    """
+    G_SI = 6.67430e-11
+    C_SI = 299792458.0
+    M_SUN_KG = 1.98847e30
+    r_g = G_SI * (M_solar * M_SUN_KG) / C_SI**2  # gravitational radius in meters
+    lmd_geom = lmd_si * r_g**2
+    r_s = r_source_m / r_g
+    r_o = r_observer_m / r_g
+    r_c = np.sqrt(3.0 / lmd_geom) if lmd_geom > 0 else np.inf
+    # Leading cosmological deflection shift (rad): -Lambda * b * (r_S + r_O) / 6 + 2 * a * Lambda * (r_S + r_O) / 3
+    delta_lambda_rad = (-lmd_geom * b_over_M / 6.0 + 2.0 * a * lmd_geom / 3.0) * (r_s + r_o)
+    delta_lambda_uas = float(np.degrees(delta_lambda_rad) * 3600.0 * 1e6)
+    return {
+        "r_g_m": float(r_g),
+        "lmd_geom": float(lmd_geom),
+        "r_source_M": float(r_s),
+        "r_observer_M": float(r_o),
+        "r_c_M": float(r_c),
+        "pi_lambda": float(lmd_geom * b_over_M * (r_s + r_o)),
+        "delta_lambda_uas": delta_lambda_uas,
+    }

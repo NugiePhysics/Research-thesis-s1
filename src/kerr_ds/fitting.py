@@ -22,6 +22,19 @@ def exponential_decay(x, A, B, C):
     return A * np.exp(-B * x) + C
 
 
+def strong_field_log(b_rel, a_bar, b_bar):
+    """Strong-deflection limit model (Bozza 2002): -a_bar * ln(b / b_c - 1) + b_bar.
+
+    Parameters
+    ----------
+    b_rel : array-like
+        Relative distance from the critical impact parameter, b / b_c - 1 (> 0).
+    a_bar, b_bar : float
+        Strong-deflection logarithmic slope and offset.
+    """
+    return -a_bar * np.log(b_rel) + b_bar
+
+
 def r_squared(y, y_pred):
     """Coefficient of determination R^2 = 1 - SS_res / SS_tot."""
     y = np.asarray(y)

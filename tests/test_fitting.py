@@ -2,7 +2,17 @@
 import numpy as np
 import pytest
 
-from kerr_ds import exponential_decay, fit_curve, linear, power_law, r_squared, run_spin_sweep
+from kerr_ds import (
+    exponential_decay,
+    fit_curve,
+    linear,
+    power_law,
+    r_squared,
+    run_distance_sweep,
+    run_impact_sweep,
+    run_spin_sweep,
+    strong_field_log,
+)
 
 
 def test_r_squared_perfect_prediction():
@@ -35,3 +45,20 @@ def test_fit_curve_returns_uncertainties():
     np.testing.assert_allclose(popt, [-6.8e4, 64.6], rtol=1e-3)
     assert perr.shape == (2,) and np.all(perr > 0)
     assert r2 == pytest.approx(1.0)
+
+
+def test_strong_field_log_fit():
+    b_rel = np.array([1e-3, 2e-3, 5e-3, 1e-2, 2e-2])
+    y = strong_field_log(b_rel, 57.3, -22.5)
+    popt, r2 = fit_curve(strong_field_log, b_rel, y, p0=[50.0, -20.0])
+    np.testing.assert_allclose(popt, [57.3, -22.5], rtol=1e-6)
+    assert r2 == pytest.approx(1.0)
+
+
+def test_impact_and_distance_sweeps():
+    res_b = run_impact_sweep(1.0, 0.0, [0.0], [7.0, 15.0], 100.0, n_jobs=1, verbose=False)
+    assert res_b[0.0, 7.0].deflection_deg > res_b[0.0, 15.0].deflection_deg
+    assert res_b[0.0, 7.0].b == 7.0
+
+    res_r = run_distance_sweep(1.0, 0.0, [1e-5], [50.0, 100.0], L_ang=7.0, n_jobs=1, verbose=False)
+    assert res_r[1e-5, 50.0].escaped and res_r[1e-5, 100.0].escaped

@@ -37,10 +37,17 @@ class TrajectoryResult:
     psi_source: float    # Psi_S: static-observer angle at the start (rad)
     psi_observer: float  # Psi_O: static-observer angle at the end (rad)
     escaped: bool        # True if the photon was scattered back out to r > r0 + 5
+    delta_t: float = np.nan  # Coordinate travel time t_final - t0 (units of M, t_code)
+    b: float = np.nan        # Impact parameter L_ang / E (units of M)
 
     @property
     def r(self):
         return np.sqrt(self.X**2 + self.Y**2)
+
+    @property
+    def r_min(self):
+        """Periapsis (radius of closest approach along the trajectory)."""
+        return float(np.min(self.r)) if len(self.X) else np.nan
 
     @property
     def deflection_deg(self):
@@ -58,10 +65,11 @@ class TrajectoryResult:
         return np.degrees(abs(abs(self.delta_phi) - np.pi))
 
 
-def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000):
+def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000, r_observer=None, b=np.nan):
     """Integrate with RK4 until the photon is captured or scattered back out."""
     intg = RungeKutta4(sptm)
 
+    t0 = float(x[0])
     # Observer angle at the source (start of the trajectory)
     psi_source = sptm.static_observer_angle(x, p)
 
@@ -70,6 +78,7 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
     Phi_vals = []
     hamiltonian_values = []
 
+    r_escape = (r0 + 5) if r_observer is None else r_observer
     escaped = False
     steps = 0
     while steps < max_steps:
@@ -89,7 +98,7 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
         # Stop Conditions
         if r_curr < r_horizon * 1.1: # Captured by the black hole
             break
-        if r_curr > r0 + 5 and steps > 10: # Scattered back out
+        if r_curr > r_escape and steps > 10: # Scattered back out
             escaped = True
             break
 
@@ -106,6 +115,8 @@ def trace_photon(sptm, x, p, r0, r_horizon, phi0=0.0, dtau=0.05, max_steps=30000
         psi_source=psi_source,
         psi_observer=sptm.static_observer_angle(x, p),  # at the end of the trajectory
         escaped=escaped,
+        delta_t=float(x[0] - t0),
+        b=float(b),
     )
 
 
@@ -124,8 +135,10 @@ def _run_one(job):
         x, p = initial_state(sptm, job['r0'], job['theta0'], job['phi0'], job['E'], job['L_ang'])
     except ValueError:
         return None
+    b_val = job.get('b', job['L_ang'] / job['E'] if job.get('E') else np.nan)
     return trace_photon(sptm, x, p, job['r0'], job['r_horizon'], phi0=job['phi0'],
-                        dtau=job['dtau'], max_steps=job['max_steps'])
+                        dtau=job['dtau'], max_steps=job['max_steps'],
+                        r_observer=job.get('r_observer'), b=b_val)
 
 
 def table_header():
@@ -164,7 +177,7 @@ def _run_jobs(jobs, n_jobs, verbose):
     _numeric_functions()
 
     if n_jobs is None:
-        n_jobs = max(1, min(len(jobs), os.cpu_count() or 1))
+        n_jobs = max(1, min(len(jobs), 4, os.cpu_count() or 1))
 
     if verbose:
         print(table_header())
@@ -222,3 +235,31 @@ def run_spin_sweep(M, spins, lambdas, r0, theta0, phi0, E, L_ang,
                  r_horizon=kerr_horizon_radius(M, a), dtau=dtau, max_steps=max_steps)
             for a in spins for lmd in lambdas]
     return {(job['a'], job['lmd']): res for job, res in _run_jobs(jobs, n_jobs, verbose)}
+
+
+def run_impact_sweep(M, a, lambdas, impacts, r0, theta0=np.pi / 2, phi0=0.0, E=1.0,
+                     dtau=0.05, max_steps=60000, n_jobs=None, verbose=True):
+    """Compute the trajectory and deflection for every combination of Lambda and impact parameter b = L_ang / E.
+
+    Returns a dict {(Lambda, b): TrajectoryResult}; combinations with invalid initial conditions are omitted.
+    """
+    rh = kerr_horizon_radius(M, a)
+    jobs = [dict(M=M, a=a, lmd=lmd, r0=r0, theta0=theta0, phi0=phi0, E=E, L_ang=b * E,
+                 b=b, r_horizon=rh, dtau=dtau, max_steps=max_steps)
+            for lmd in lambdas for b in impacts]
+    return {(job['lmd'], job['b']): res for job, res in _run_jobs(jobs, n_jobs, verbose)}
+
+
+def run_distance_sweep(M, a, lambdas, r0_values, theta0=np.pi / 2, phi0=0.0, E=1.0, L_ang=7.0,
+                       dtau=0.05, max_steps=None, n_jobs=None, verbose=True):
+    """Compute the trajectory and deflection for every combination of Lambda and source distance r0.
+
+    Returns a dict {(Lambda, r0): TrajectoryResult}; combinations with invalid initial conditions
+    (e.g. r0 beyond the cosmological static limit) are omitted.
+    """
+    rh = kerr_horizon_radius(M, a)
+    jobs = [dict(M=M, a=a, lmd=lmd, r0=r0, theta0=theta0, phi0=phi0, E=E, L_ang=L_ang,
+                 b=L_ang / E, r_horizon=rh, dtau=dtau,
+                 max_steps=max_steps or max(30000, int(3.0 * r0 / dtau)))
+            for lmd in lambdas for r0 in r0_values]
+    return {(job['lmd'], job['r0']): res for job, res in _run_jobs(jobs, n_jobs, verbose)}

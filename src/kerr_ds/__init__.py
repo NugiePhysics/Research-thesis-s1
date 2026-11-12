@@ -1,14 +1,17 @@
 """Light deflection in Kerr-de Sitter spacetime (undergraduate thesis research)."""
 from . import analytic
 from .base import Integrator, Spacetime
-from .fitting import exponential_decay, fit_curve, linear, power_law, r_squared
+from .fitting import exponential_decay, fit_curve, linear, power_law, r_squared, strong_field_log
 from .integrators import RungeKutta4
 from .kerr_de_sitter import KerrDeSitter, kerr_horizon_radius
 from .plotting import (
     plot_deflection_shift_comparison,
+    plot_distance_sweep,
     plot_hamiltonian_vs_r,
     plot_hamiltonian_vs_step,
+    plot_impact_sweep,
     plot_lambda_fit,
+    plot_shadow_and_time_delay,
     plot_spin_fit,
     plot_trajectories,
 )
@@ -17,6 +20,8 @@ from .simulation import (
     format_legacy_table,
     format_table,
     initial_state,
+    run_distance_sweep,
+    run_impact_sweep,
     run_lambda_sweep,
     run_spin_sweep,
     trace_photon,
@@ -37,14 +42,20 @@ __all__ = [
     "kerr_horizon_radius",
     "linear",
     "plot_deflection_shift_comparison",
+    "plot_distance_sweep",
     "plot_hamiltonian_vs_r",
     "plot_hamiltonian_vs_step",
+    "plot_impact_sweep",
     "plot_lambda_fit",
+    "plot_shadow_and_time_delay",
     "plot_spin_fit",
     "plot_trajectories",
     "power_law",
     "r_squared",
+    "run_distance_sweep",
+    "run_impact_sweep",
     "run_lambda_sweep",
     "run_spin_sweep",
+    "strong_field_log",
     "trace_photon",
 ]

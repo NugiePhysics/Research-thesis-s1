@@ -70,7 +70,37 @@ researchers.
   reverses. The simple formulas no longer work there, but the simulation still matches an exact
   calculation.
 
-### 3. The simulation is accurate
+### 3. Strong-field sign reversal, cosmological horizon, and shadow & time delay
+
+<p align="center">
+  <img src="images/transisi_medan_kuat_lemah.png" width="760" alt="Strong-to-weak field transition and universal sign reversal">
+</p>
+
+- **Universal sign reversal near the photon sphere:** Sweeping the impact parameter from $b - b_c = 0.05M$
+  to $50M$ shows that near the critical orbit $b_c$, the bending follows Bozza's (2002) logarithmic strong-field
+  limit. Because $\Lambda > 0$ slightly increases $b_c(a, \Lambda)$ for *all* spins, every spin has a crossover
+  distance $b_{\text{cross}}(a, r_0) > b_c(a)$ below which $\Lambda > 0$ increases the deflection angle. At fixed
+  $b = 7M$, only $a = -0.99$ lies inside this strong-field crossover ($b_{\text{cross}} \approx 7.004M$).
+
+<p align="center">
+  <img src="images/pengaruh_jarak_r0.png" width="760" alt="Dependence on source distance r0 near the cosmological horizon">
+</p>
+
+- **Distance to the cosmological horizon:** Varying the source/observer distance $r_0 \in [50M, 700M]$ confirms
+  that the $\Lambda$ shift grows linearly with $r_0$ when $r_0 \ll r_c$, and steepens non-linearly as $r_0$
+  approaches the de Sitter cosmological horizon $r_c \approx \sqrt{3/\Lambda} \approx 773.6M$ (at
+  $\Lambda = 5\times10^{-6}M^{-2}$).
+
+<p align="center">
+  <img src="images/bayangan_dan_waktu_tunda.png" width="760" alt="Shapiro time delay, black-hole shadow, and Einstein ring">
+</p>
+
+- **Shapiro time delay, black-hole shadow, and Einstein ring:** From the same trajectories and metric, the
+  simulated gravitational (Shapiro) time delay matches exact quadrature to $\lesssim 10^{-4}M$, while a
+  positive $\Lambda$ shrinks both the apparent black-hole shadow radius $\psi_{\text{sh}}$ (matching Afrin &
+  Ghosh 2022) and the Einstein ring radius $\theta_E$.
+
+### 4. The simulation is accurate
 
 <p align="center">
   <img src="images/hamiltonian.png" width="620" alt="Numerical error along the light path">
@@ -110,8 +140,13 @@ an independent, exact calculation to within one millionth of a degree.
 - Validation: $\max\lvert H\rvert \approx 2\times10^{-11}$. Agreement with an exact quadrature
   benchmark to $\lesssim 10^{-6}$ degrees, and with literature values (Hasanuddin 2012) and analytic
   formulas in the weak field. Regression tests guarantee trajectories identical to the original code.
-- Curve fits: $\delta = A\lvert\Lambda\rvert^B + C$ and $\delta(a) = A e^{-Ba} + C$, with parameter
-  uncertainties and $R^2$.
+- Extended strong-field & cosmological analysis: Bozza (2002) strong-deflection coefficients $(\bar{a}, \bar{b})$,
+  universal sign-reversal crossover $b_{\text{cross}}(a, r_0)$, cosmological horizon $r_c$ and static limit
+  $r_{\text{static}}$, gravitational Shapiro time delay $\Delta t_{\text{Shapiro}}$, black-hole shadow angular
+  radius $\psi_{\text{sh}}$ (Afrin & Ghosh 2022), Einstein ring angle $\theta_E$, and astrophysical scaling
+  for Sgr A* and M87*.
+- Curve fits: $\delta = A\lvert\Lambda\rvert^B + C$, $\delta(a) = A e^{-Ba} + C$, and strong-field
+  logarithmic fits $\delta(b) = -A\ln(b/b_c - 1) + B$, with parameter uncertainties and $R^2$.
 
 | Version | Deflection angle | Use |
 |---|---|---|
@@ -165,16 +200,21 @@ if __name__ == "__main__":  # required for multiprocessing in scripts
         print(res.lmd, res.deflection_deg)
 ```
 
-The `kerr_ds.analytic` module provides the exact deflection angle (`deflection_exact_deg`) and the
-formulas of Huang et al. (2025) and Belhaj et al. (2022). Run the tests with `pytest`.
+The `kerr_ds.analytic` module provides the exact deflection angle (`deflection_exact_deg`), the weak-field
+formulas of Huang et al. (2025) and Belhaj et al. (2022), Bozza (2002) strong-deflection coefficients
+(`strong_deflection_coefficients`), the universal sign-reversal crossover (`lambda_crossover_impact_parameter`),
+the cosmological horizon (`cosmological_horizon`), gravitational time delay (`shapiro_delay_exact`),
+black-hole shadow (`shadow_angular_radius_deg`), Einstein ring (`einstein_ring_angle_deg`), and astrophysical
+lensing summaries (`astrophysical_lensing_summary`). Run the tests with `pytest`.
 
 </details>
 
 ## What's in this repository
 
 ```
-src/kerr_ds/     the physics code (equations, step-by-step solver, analysis, plots)
+src/kerr_ds/     the physics code (equations, step-by-step solver, analytic benchmarks, fits, plots)
 notebooks/       ready-to-run notebooks that reproduce the results
+docs/            methodology, literature comparison analysis, and the compiled final report (PDF/LaTeX)
 tests/           automatic checks that the results stay correct
 images/          the figures shown on this page
 ```

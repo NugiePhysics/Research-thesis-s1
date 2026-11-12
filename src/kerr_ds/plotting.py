@@ -188,3 +188,59 @@ def plot_spin_fit(spins, deflections, fits, save_path=None):
 def _save(fig, save_path):
     if save_path is not None:
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
+
+
+def plot_impact_sweep(impacts, deflections_by_lambda, b_c=None, save_path=None):
+    """Deflection angle delta(b) across weak and strong field regimes."""
+    impacts = np.asarray(impacts, dtype=float)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, (lmd, vals) in enumerate(deflections_by_lambda.items()):
+        ax.plot(impacts, vals, marker='o', color=COLORS[i % len(COLORS)], linewidth=1.8,
+                label=rf'$\Lambda = {lmd:g}$')
+    if b_c is not None:
+        ax.axvline(b_c, color='red', linestyle='--', linewidth=1.2, label=rf'$b_c = {b_c:.4f}M$')
+    ax.set_xlabel(r'Impact parameter $b$ ($M$)', fontsize=12)
+    ax.set_ylabel('Deflection angle (deg)', fontsize=12)
+    ax.set_yscale('log')
+    ax.grid(True, which='both', linestyle='--', alpha=0.5)
+    ax.legend(loc='best')
+    fig.tight_layout()
+    _save(fig, save_path)
+    return fig, ax
+
+
+def plot_distance_sweep(r0_values, shifts_by_spin, save_path=None):
+    """Cosmological deflection shift delta(Lambda) - delta(0) versus source distance r0."""
+    r0_values = np.asarray(r0_values, dtype=float)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, (a, vals) in enumerate(shifts_by_spin.items()):
+        ax.plot(r0_values, vals, marker='o', color=COLORS[i % len(COLORS)], linewidth=1.8,
+                label=rf'$a = {a:g}M$')
+    ax.axhline(0, color='gray', linewidth=0.8)
+    ax.set_xlabel(r'Source distance $r_0$ ($M$)', fontsize=12)
+    ax.set_ylabel(r'$\delta(\Lambda) - \delta(0)$ (deg)', fontsize=12)
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.legend(loc='best')
+    fig.tight_layout()
+    _save(fig, save_path)
+    return fig, ax
+
+
+def plot_shadow_and_time_delay(impacts, delays_by_spin, spins, shadow_shifts, save_path=None):
+    """Two-panel plot of gravitational Shapiro time delay and black-hole shadow angular radius shift."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    for i, (a, vals) in enumerate(delays_by_spin.items()):
+        ax1.plot(impacts, vals, marker='o', color=COLORS[i % len(COLORS)], label=rf'$a = {a:g}M$')
+    ax1.set_xlabel(r'Impact parameter $b$ ($M$)')
+    ax1.set_ylabel(r'Shapiro delay $\Delta t - \Delta t_{\mathrm{flat}}$ ($M$)')
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    ax1.legend(loc='best')
+
+    ax2.plot(spins, shadow_shifts, marker='s', color='teal', linewidth=1.8)
+    ax2.axhline(0, color='gray', linewidth=0.8)
+    ax2.set_xlabel(r'Spin $a$ ($M$)')
+    ax2.set_ylabel(r'Shadow shift $\psi_{\mathrm{sh}}(\Lambda) - \psi_{\mathrm{sh}}(0)$ (deg)')
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    fig.tight_layout()
+    _save(fig, save_path)
+    return fig, (ax1, ax2)
